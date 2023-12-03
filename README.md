@@ -1,0 +1,2 @@
+# sway-fullscreen-gaps
+yo
