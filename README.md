@@ -1,2 +1,2 @@
-# sway-fullscreen-gaps
-yo
+# sway-anchor
+work in progress
