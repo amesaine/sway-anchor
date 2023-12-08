@@ -16,7 +16,7 @@ Dependencies: python-i3ipc>=2.2.1 (i3ipc-python)
 
 from i3ipc import Connection, Con, Event
 from typing import Dict
-from enum import Enum
+from enum import Enum, auto
 from functools import partial
 
 
@@ -27,128 +27,137 @@ class Orientation(Enum):
 
 
 class Order(Enum):
-    PREV = 1
-    NEXT = 2
+    PREV = auto()
+    NEXT = auto()
 
 
-class OriginalState():
-    def __init__(self):
-        self.container: Con = None
-        self.fertile: Con = None
-        self.anchor_parent_orientation: Orientation = None
-        self.anchor_direction: Order = None
-        self.anchor_fertile: Con = None
+class Fertile:
+    def __init__(self, container: Con, origin_line: Con):
+        self.container = container
+        self.origin_line = origin_line
 
 
-def find_fertile(c: Con) -> Dict[str, Con]:
-    '''
-    finds the ancestor that has more than 1 immediate child node,
-    contrary to its name, this will also return workspace
-    even if workspace only has 1 child node
-    it also returns child node which contains the original
-    focused container
-    '''
-    f_t = c
-    fert = f_t.parent
-    while len(fert.nodes) == 1 and fert.type != "workspace":
-        f_t = fert
-        fert = fert.parent
-    return {"fertile": fert, "focused_tree_line": f_t}
+class ConState:
+    def __init__(self, container: Con = None):
+        self._container: Con = None
+        self._fertile: Fertile = None
+        self._anchor: Con = None
+        self.anchor_position: Order = None
+
+        if container is not None:
+            self._container = container
+
+    @property
+    def container(self):
+        return self._container
+
+    @container.setter
+    def container(self, container: Con):
+        if self._container is not None:
+            raise Exception(f"State is already set: {self._container.id}")
+
+        if container is not None:
+            self._container = container
+            self._fertile = self.find_fertile()
+            self._anchor = self.find_anchor()
+
+    @property
+    def fertile(self):
+        return self._fertile
+
+    @property
+    def anchor(self):
+        return self._anchor
+
+    def find_fertile(self) -> Fertile:
+        origin = self._container
+        fertile = origin.parent
+        while len(fertile.nodes) == 1 and fertile.type != "workspace":
+            origin = fertile
+            fertile = fertile.parent
+        return Fertile(fertile, origin)
+
+    def find_anchor(self) -> Con:
+        f = self._fertile
+        fn = f.container.nodes
+        ol_i = fn.index(f.origin_line)
+
+        def dive(c: Con, i: int) -> Con:
+            # c is a window
+            if c.orientation == Orientation.NONE.value:
+                return c
+
+            return dive(c.nodes[i], i)
+
+        if ol_i == 0:
+            self.anchor_position = Order.NEXT
+            return dive(fn[1], 0)
+        else:
+            self.anchor_position = Order.PREV
+            return dive(fn[ol_i - 1], -1)
+
+    def return_con(self) -> Dict[str, int]:
+        anchor = ConState(self.anchor)
+
+        sequence: Dict[str, int] = None
+
+        direction: Dict[tuple, str] = {
+            (Order.NEXT, Orientation.HORIZONTAL.value,): "left",
+            (Order.NEXT, Orientation.VERTICAL.value): "up",
+            (Order.PREV, Orientation.HORIZONTAL.value): "right",
+            (Order.PREV, Orientation.VERTICAL.value): "down",
+        }
+
+        # if immediate siblings
+        if self.fertile == anchor.fertile:
+            key = (self.anchor_position, anchor.container.parent.orientation)
+            sequence["command"] = f"move {direction.get(key)}"
+
+            if self.anchor_position == Order.NEXT:
+                sequence["invoke"] = 1
+            else:
+                sequence["invoke"] = 0
+        else:
+            key = (self.anchor_position, self.fertile.container.orientation)
+            sequence["command"] = f"move {direction.get(key)}"
+
+            if self.fertile.container.orientation == anchor.container.parent.orientation:
+                sequence["invoke"] = 2
+            else:
+                sequence["invoke"] = 1
+
+        return sequence
+    
+    def reset(self):
+        self._container = None
+        self._anchor = None
+        self._fertile = None
+        self.anchor_position = None
 
 
-def dive(c: Con, ori_sta: OriginalState) -> Con:
-    '''Original_State
-    by default, will get the first node in the layout, important
-    when the current orientation is perpendicular to the orientation
-    of the original container's parent.
-    used for when the sibling comes after the original container.
-    '''
+def fullscreener(i3: Connection, e, focused: ConState):
+    if focused.container is None:
+        focused.container = i3.get_tree().find_focused()
+    fc = focused.container
 
-    i = None
-    if ori_sta.anchor_direction == Order.NEXT:
-        i = 0
-    elif ori_sta.anchor_direction == Order.PREV:
-        i = -1
-
-    # c is a window
-    if c.orientation == Orientation.NONE.value:
-        return c
-
-    return dive(c.nodes[i], ori_sta)
-
-
-def find_anchor(ori_sta: OriginalState) -> Con:
-    result = find_fertile(ori_sta.container)
-    # has immediate siblings
-    fertile_nodes = result["fertile"].nodes
-    ftl = result["focused_tree_line"]
-    ftl_i = fertile_nodes.index(ftl)
-    if ftl_i == 0:
-        ori_sta.anchor_direction = Order.NEXT
-        return dive(fertile_nodes[1], ori_sta)
-    else:
-        ori_sta.anchor_direction = Order.PREV
-        return dive(fertile_nodes[ftl_i - 1], ori_sta)
-
-
-def move(ori_sta: OriginalState) -> Dict[str, int]:
-    # if immediate siblings
-    fer = ori_sta.fertile
-    foo = {"direction": None, "repeat": None}
-    if fer == ori_sta.anchor_fertile:
-        if ori_sta.anchor_direction == Order.PREV:
-            foo["direction"] = "fuck all"
-            foo["repeat"] = 0
-        elif ori_sta.anchor_direction == Order.NEXT:
-            if ori_sta.anchor_parent_orientation == Orientation.VERTICAL.value:
-                foo["direction"] = "up"
-                foo["repeat"] = 1
-            elif ori_sta.anchor_parent_orientation == Orientation.HORIZONTAL.value:
-                foo["direction"] = "left"
-                foo["repeat"] = 1
-    elif fer != ori_sta.anchor_fertile:
-        if fer.orientation != ori_sta.anchor_parent_orientation:
-            if fer.orientation == Orientation.HORIZONTAL.value:
-                if ori_sta.anchor_direction == Order.PREV:
-                    foo["direction"] = "right"
-                    foo["repeat"] = 1
-                elif ori_sta.anchor_direction == Order.NEXT:
-                    foo["direction"] = "left"
-                    foo["repeat"] = 1
-            elif fer.orientation == Orientation.VERTICAL.value:
-                if ori_sta.anchor_direction == Order.PREV:
-                    foo["direction"] = "down"
-                    foo["repeat"] = 1
-                elif ori_sta.anchor_direction == Order.NEXT:
-                    foo["direction"] = "up"
-                    foo["repeat"] = 1
-    return foo
-
-
-def fullscreener(i3: Connection, e, ori_sta: OriginalState):
-    fc: Con = i3.get_tree().find_focused()
-    ori_sta.container = fc
     if "fullscreen-gaps" in fc.marks and fc.workspace().name != "fullscreen-gaps":
-        anchor = find_anchor(ori_sta)
-        ori_sta.fertile = find_fertile(ori_sta.container)["fertile"]
-        ori_sta.anchor_parent_orientation = anchor.parent.orientation
-        ori_sta.anchor_fertile = find_fertile(anchor)["fertile"]
-        i3.command(f"[con_id={anchor.id}] focus, mark --add anchor;"
+        i3.command(f"[con_id={focused.anchor.id}] focus, mark --add anchor;"
                    f"[con_id={fc.id}] focus;"
                    f"move container to workspace fullscreen-gaps,"
                    f"workspace fullscreen-gaps")
     elif "fullscreen-gaps" not in fc.marks and fc.workspace().name == "fullscreen-gaps":
         i3.command("move container to mark anchor, unmark anchor,"
                    "workspace back_and_forth")
-        result = move(ori_sta)
-        for i in range(result["repeat"]):
-            i3.command(f'move {result["direction"]}')
+        sequence = focused.return_con()
+        for i in range(sequence["invoke"]):
+            i3.command(sequence["command"])
+        focused.reset()
 
 
 def main():
     i3 = Connection()
-    ori_sta = OriginalState()
-    handler = partial(fullscreener, ori_sta=ori_sta)
+    focused = ConState()
+    handler = partial(fullscreener, focused=focused)
     i3.on(Event.WINDOW_MARK, handler)
     i3.main()
 
