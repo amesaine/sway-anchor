@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+
+"""
+idk
+
+Copyright: jnzigg
+e-mail: jnzig@proton.me
+Project: https://github.com/jnzigg/sway-anchor
+License: GPL3
+
+Dependencies: python-i3ipc>=2.2.1 (i3ipc-python)
+"""
+
+from i3ipc import Connection, Con, Event, events
+from collections import deque
+from functools import partial
+import json
+
+
+class DeezNuts:
+    def __init__(self):
+        self.anchored_anchor: deque[tuple[Con, Con, bool]] = deque(maxlen=3)
+        self.focused_cache: Con = None
+
+
+def find_fertile(origin: Con) -> tuple[Con, Con]:
+    fertile = origin.parent
+    while len(fertile.nodes) == 1 and fertile.type != "workspace":
+        origin = fertile
+        fertile = fertile.parent
+    return (fertile, origin)
+
+
+def find_anchor(c: Con) -> tuple[Con, bool]:
+    fertile, origin = find_fertile(c)
+    o_i = fertile.nodes.index(origin)
+
+    def dive(c: Con, i: int) -> Con:
+        # c is a window
+        if c.orientation == "none":
+            return c
+
+        return dive(c.nodes[i], i)
+
+    anchored_is_first_child = o_i == 0
+
+    if anchored_is_first_child:
+        return (dive(fertile.nodes[1], 0), anchored_is_first_child)
+    else:
+        return (dive(fertile.nodes[o_i - 1], -1), anchored_is_first_child)
+
+
+def on_focus(i3: Connection, e: events.WindowEvent, dn: DeezNuts):
+    dn.focused_cache = i3.get_tree().find_focused()
+
+
+def on_move(i3: Connection, e: events.WindowEvent, dn: DeezNuts):
+    anchor, anchored_is_first_child = find_anchor(dn.focused_cache)
+    dn.anchored_anchor.append((dn.focused_cache, anchor, anchored_is_first_child))
+
+
+def on_undo(i3: Connection, e: events.TickEvent, dn: DeezNuts):
+    if len(dn.anchored_anchor) == 0:
+        return
+
+    anchored, anchor, aifc = dn.anchored_anchor.pop()
+
+    i3.command(f'[con_id={anchor.id}] mark --add anchor;'
+               f'[con_id={anchored.id}] move container to mark anchor,'
+               f'focus;'
+               f'unmark anchor')
+
+    adf, _ = find_fertile(anchored)
+    ap = anchor.parent
+
+    direction = {
+        (True, "horizontal"): "left",
+        (True, "vertical"): "up",
+        (False, "horizontal"): "right",
+        (False, "vertical"): "down",
+    }
+
+    def fix_position(direction: str, times: int):
+        for _ in range(times):
+            i3.command(f'move {direction}')
+
+    is_immediate_siblings = adf == anchor.parent
+    if is_immediate_siblings:
+        if aifc:
+            fix_position(direction.get((aifc, anchor.parent.orientation)), 1)
+        else:
+            fix_position(direction.get((aifc, anchor.parent.orientation)), 0)
+    else:
+        if adf.orientation == ap.orientation:
+            fix_position(direction.get((aifc, adf.orientation)), 2)
+        else:
+            fix_position(direction.get((aifc, adf.orientation)), 1)
+    dn.focused_cache = i3.get_tree().find_focused()
+
+
+def tick_event_router(i3: Connection, e: events.TickEvent, dn: DeezNuts):
+    if e.first:
+        return
+
+    payload = json.loads(e.payload)
+    if payload["change"] != "sway-anchor":
+        return
+
+    match payload["command"]:
+        case "undo":
+            i3.main_quit()
+            on_undo(i3, e, dn)
+            i3.main()
+
+
+def main():
+    dn = DeezNuts()
+    i3 = Connection()
+
+    on_focus_p = partial(on_focus, dn=dn)
+    i3.on(Event.WINDOW_FOCUS, on_focus_p)
+
+    on_move_p = partial(on_move, dn=dn)
+    i3.on(Event.WINDOW_MOVE, on_move_p)
+
+    tick_event_router_p = partial(tick_event_router, dn=dn)
+    i3.on(Event.TICK, tick_event_router_p)
+
+    i3.main()
+
+
+if __name__ == "__main__":
+    main()
