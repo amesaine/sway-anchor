@@ -19,7 +19,7 @@ import json
 
 class DeezNuts:
     def __init__(self):
-        self.anchored_anchor: deque[tuple[Con, Con, bool]] = deque(maxlen=3)
+        self.anchored_anchor: deque[tuple[Con, Con, int, bool]] = deque(maxlen=3)
         self.focused_cache: Con = None
 
 
@@ -31,23 +31,26 @@ def find_fertile(origin: Con) -> tuple[Con, Con]:
     return (fertile, origin)
 
 
-def find_anchor(c: Con) -> tuple[Con, bool]:
+def find_anchor(c: Con) -> tuple[Con, int, bool]:
     fertile, origin = find_fertile(c)
     o_i = fertile.nodes.index(origin)
 
-    def dive(c: Con, i: int) -> Con:
+    def dive(c: Con, i: int, depth: int = -1) -> tuple[Con, int]:
+        depth += 1
         # c is a window
         if c.orientation == "none":
-            return c
+            return c, depth
 
-        return dive(c.nodes[i], i)
+        return dive(c.nodes[i], i, depth)
 
     anchored_is_first_child = o_i == 0
 
     if anchored_is_first_child:
-        return (dive(fertile.nodes[1], 0), anchored_is_first_child)
+        anchor, depth = dive(fertile.nodes[1], 0)
+        return (anchor, depth, anchored_is_first_child)
     else:
-        return (dive(fertile.nodes[o_i - 1], -1), anchored_is_first_child)
+        anchor, depth = dive(fertile.nodes[o_i - 1], -1)
+        return (anchor, depth, anchored_is_first_child)
 
 
 def on_focus(i3: Connection, e: events.WindowEvent, dn: DeezNuts):
@@ -55,15 +58,15 @@ def on_focus(i3: Connection, e: events.WindowEvent, dn: DeezNuts):
 
 
 def on_move(i3: Connection, e: events.WindowEvent, dn: DeezNuts):
-    anchor, anchored_is_first_child = find_anchor(dn.focused_cache)
-    dn.anchored_anchor.append((dn.focused_cache, anchor, anchored_is_first_child))
+    anchor, depth, anchored_is_first_child = find_anchor(dn.focused_cache)
+    dn.anchored_anchor.append((dn.focused_cache, anchor, depth, anchored_is_first_child))
 
 
 def on_undo(i3: Connection, e: events.TickEvent, dn: DeezNuts):
-    if len(dn.anchored_anchor) == 0:
+    if not dn.anchored_anchor:
         return
 
-    anchored, anchor, aifc = dn.anchored_anchor.pop()
+    anchored, anchor, d, aifc = dn.anchored_anchor.pop()
 
     i3.command(f'[con_id={anchor.id}] mark --add anchor;'
                f'[con_id={anchored.id}] move container to mark anchor,'
@@ -92,9 +95,9 @@ def on_undo(i3: Connection, e: events.TickEvent, dn: DeezNuts):
             fix_position(direction.get((aifc, anchor.parent.orientation)), 0)
     else:
         if adf.orientation == ap.orientation:
-            fix_position(direction.get((aifc, adf.orientation)), 2)
+            fix_position(direction.get((aifc, adf.orientation)), d)
         else:
-            fix_position(direction.get((aifc, adf.orientation)), 1)
+            fix_position(direction.get((aifc, adf.orientation)), d)
     dn.focused_cache = i3.get_tree().find_focused()
 
 
@@ -110,6 +113,10 @@ def tick_event_router(i3: Connection, e: events.TickEvent, dn: DeezNuts):
         case "undo":
             i3.main_quit()
             on_undo(i3, e, dn)
+            i3.main()
+        case "pause":
+            i3.main_quit()
+        case "start":
             i3.main()
 
 
