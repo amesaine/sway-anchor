@@ -21,4 +21,8 @@ Issues
 
 TODO
 ----
+- Error handling
+- Refactoring
+- Debug mode
+- Tests (maybe)
 
