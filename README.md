@@ -11,6 +11,7 @@ How it works
      - Store the two windows' state.
 3. On undo, move anchored window of the most recently tracked state to its anchor.
 4. If necessary, move window up, down, left, or right, until original layout is restored.
+5. Repeat
 
 Installation
 ------------
