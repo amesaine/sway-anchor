@@ -3,6 +3,8 @@ sway-anchor
 
 SwayWM script to undo container reparenting and restore original layout.
 
+![Demo of the script in action](https://github.com/jnzigg/sway-anchor/blob/main/assets/demo.gif)
+
 How it works
 ------------
 1. Get state of currently focused window.
