@@ -65,6 +65,31 @@ How it works
 4. If necessary, move window up, down, left, or right, until original layout is restored.
 5. Repeat
 
+Motivation
+-----------
+I wanted to "fullscreen" a window while still having window gaps and a status bar. This essentially is just moving it to another workspace as a solo container. The problem was that when moving it back to it's original workspace, the layout wasn't restored. This was not easily fixable with builtin sway commands.
+
+Through sway-anchor, it's now doable with this simple bash script (**sway-fullscreen-gaps**):
+```sh
+#!/bin/sh
+
+active_ws=$(swaymsg -t get_workspaces -r \
+    | jq -r '.[] | select(.focused==true).name')
+
+if [ "$active_ws" != "fullscreen-gaps" ]; then
+    swaymsg move container to workspace fullscreen-gaps
+    swaymsg workspace fullscreen-gaps
+else
+    sway-anchor state undo
+fi
+```
+
+Then add this to your sway config:
+```
+bindsym $mod+f exec sway-fullscreen-gaps
+```
+
+
 FAQ
 ---
 ### 1. Sometimes, the layout restoration doesn't work properly.
