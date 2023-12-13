@@ -24,6 +24,10 @@ Base State:
 6. Swap neovim with wf-recorder (terminal).
 7. Undo state 3 times.
 
+> [!NOTE]
+> This script isn't polished and may or may not work on your setup. It may also fall in and out of my priorities.
+> Regardless, feel free to open issues or pull requests.
+
 Quickstart
 ------------
 
@@ -61,8 +65,16 @@ How it works
 4. If necessary, move window up, down, left, or right, until original layout is restored.
 5. Repeat
 
-Issues
-------
+FAQ
+---
+### 1. Sometimes, the layout restoration doesn't work properly.
+Besides error handling not being implemented yet, this script isn't supposed to handle all edge cases. Specific edge case
+support will only be supported if enough people need it. Using [sway-autotiling][sway-autotiling] with `--limit 2`, this
+script works perfectly.
+
+### 2. Will state redo functionality be implemented?
+No plans as of yet. Although it's a fairly simple feature to add, I personally think having too much ways to navigate a system can be prone
+to decision paralysis. If enough people voice their need for it, it will be supported.
 
 TODO
 ----
@@ -74,3 +86,4 @@ TODO
 
 [script]: https://github.com/jnzigg/sway-anchor/blob/main/sway-anchor
 [swap-keybinds]: https://www.reddit.com/r/swaywm/comments/mmhvyf/swap_mode/
+[sway-autotiling]: https://github.com/nwg-piotr/autotiling
