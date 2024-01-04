@@ -3,6 +3,9 @@ sway-anchor
 
 SwayWM script to undo container reparenting and restore original layout.
 
+> [!WARNING]
+> This project will be rewritten in Rust.
+
 Demo
 ----
 
